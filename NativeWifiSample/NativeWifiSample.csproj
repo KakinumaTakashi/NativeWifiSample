@@ -51,7 +51,9 @@
     </Compile>
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="WirelessAPI.cs" />
+    <Compile Include="Wifi\NativeWifiAPI.cs" />
+    <Compile Include="Wifi\WifiController.cs" />
+    <Compile Include="Wifi\WifiInterface.cs" />
     <EmbeddedResource Include="Form1.resx">
       <DependentUpon>Form1.cs</DependentUpon>
     </EmbeddedResource>

@@ -67,14 +67,14 @@ namespace NativeWifiSample
             this.TextBoxKEY.Location = new System.Drawing.Point(48, 31);
             this.TextBoxKEY.Name = "TextBoxKEY";
             this.TextBoxKEY.Size = new System.Drawing.Size(362, 19);
-            this.TextBoxKEY.TabIndex = 3;
+            this.TextBoxKEY.TabIndex = 2;
             // 
             // ButtonConnect
             // 
             this.ButtonConnect.Location = new System.Drawing.Point(178, 62);
             this.ButtonConnect.Name = "ButtonConnect";
             this.ButtonConnect.Size = new System.Drawing.Size(113, 31);
-            this.ButtonConnect.TabIndex = 4;
+            this.ButtonConnect.TabIndex = 3;
             this.ButtonConnect.Text = "接続";
             this.ButtonConnect.UseVisualStyleBackColor = true;
             this.ButtonConnect.Click += new System.EventHandler(this.ButtonConnect_Click);
