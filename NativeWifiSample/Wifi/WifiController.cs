@@ -16,9 +16,12 @@ namespace Wifi
         private WifiInterfaceInfo CurrentWifiInterfaceInfo = null;
         private List<WifiInterfaceInfo> CurrentWifiInterfaceInfoList = new List<WifiInterfaceInfo>();
 
+        private string CurrentSSID = null;
+
+
         public WifiController()
         {
-            System.Diagnostics.Debug.WriteLine("<<WifiController>> constructor start");
+            DEBUG_LOG(LOG_DEBUG, "constructor start");
 
             try
             {
@@ -26,21 +29,21 @@ namespace Wifi
                 uint _version;
                 if (NativeWifiAPI.WlanOpenHandle(2, IntPtr.Zero, out _version, out this.Handle) != 0)
                 {
-                    System.Diagnostics.Debug.WriteLine("[ERROR] WlanOpenHandle failed");
-                    throw new Exception("WlanOpenHandle failed"); // TODO
+                    throw new Exception(DEBUG_LOG(LOG_ERROR, "WlanOpenHandle failed"));
                 }
-                System.Diagnostics.Debug.WriteLine("[INFO] WlanOpenHandle success");
-                System.Diagnostics.Debug.WriteLine(String.Format("[INFO] NegotiatedVersion = {0}", _version));
+                DEBUG_LOG(LOG_INFO, "WlanOpenHandle success");
+                DEBUG_LOG(LOG_DEBUG, String.Format("NegotiatedVersion = {0}", _version));
+
                 // WiFiアダプタの列挙
                 IntPtr ptr = new IntPtr();
                 if (NativeWifiAPI.WlanEnumInterfaces(this.Handle, IntPtr.Zero, ref ptr) != 0)
                 {
-                    System.Diagnostics.Debug.WriteLine("[ERROR] WlanEnumInterfaces failed");
-                    throw new Exception("WlanEnumInterfaces failed"); // TODO
+                    throw new Exception(DEBUG_LOG(LOG_ERROR, "WlanEnumInterfaces failed"));
                 }
                 NativeWifiAPI.WLAN_INTERFACE_INFO_LIST infoList = new NativeWifiAPI.WLAN_INTERFACE_INFO_LIST(ptr);
                 NativeWifiAPI.WlanFreeMemory(ptr);
-                System.Diagnostics.Debug.WriteLine("[INFO] WlanEnumInterfaces success");
+                DEBUG_LOG(LOG_INFO, "WlanEnumInterfaces success");
+
                 // WiFiアダプタリストを設定
                 foreach (NativeWifiAPI.WLAN_INTERFACE_INFO _info in infoList.InterfaceInfo)
                 {
@@ -48,7 +51,7 @@ namespace Wifi
                     {
                         InterfaceGuid = _info.InterfaceGuid,
                         InterfaceDescription = _info.strInterfaceDescription,
-                        State = (WIFI_INTERFACE_STATE)_info.isState // TODO
+                        State = (WIFI_INTERFACE_STATE)_info.isState
                     };
                     this.CurrentWifiInterfaceInfoList.Add(_wifiInfo);
 
@@ -58,6 +61,7 @@ namespace Wifi
                         this.CurrentWifiInterfaceInfo = _wifiInfo;
                     }
                 }
+
                 // イベント通知ハンドラの登録
                 NativeWifiAPI.WLAN_NOTIFICATION_SOURCE pdwPrevNotifSource;
                 NativeWifiAPI.WLAN_NOTIFICATION_CALLBACK _delegate = new NativeWifiAPI.WLAN_NOTIFICATION_CALLBACK(WlanNotificationCallback);
@@ -65,10 +69,9 @@ namespace Wifi
                 if (NativeWifiAPI.WlanRegisterNotification(this.Handle, NativeWifiAPI.WLAN_NOTIFICATION_SOURCE.ACM, false,
                     _delegate, IntPtr.Zero, IntPtr.Zero, out pdwPrevNotifSource) != 0)
                 {
-                    System.Diagnostics.Debug.WriteLine("[ERROR] WlanRegisterNotification failed");
-                    throw new Exception("WlanRegisterNotification failed"); // TODO
+                    throw new Exception(DEBUG_LOG(LOG_ERROR, "WlanRegisterNotification failed"));
                 }
-                System.Diagnostics.Debug.WriteLine("[INFO] WlanRegisterNotification success");
+                DEBUG_LOG(LOG_INFO, "WlanRegisterNotification success");
             }
             catch (Exception)
             {
@@ -76,13 +79,13 @@ namespace Wifi
             }
             finally
             {
-                System.Diagnostics.Debug.WriteLine("<<WifiController>> constructor end");
+                DEBUG_LOG(LOG_DEBUG, "constructor end");
             }
         }
 
         public void Dispose()
         {
-            System.Diagnostics.Debug.WriteLine("<<WifiController>> Dispose start");
+            DEBUG_LOG(LOG_DEBUG, "Dispose start");
 
             //if (this.Handle == IntPtr.Zero) return;
 
@@ -90,10 +93,9 @@ namespace Wifi
             {
                 if (NativeWifiAPI.WlanCloseHandle(this.Handle, IntPtr.Zero) != 0)
                 {
-                    System.Diagnostics.Debug.WriteLine("[ERROR] WlanCloseHandle failed");
-                    throw new Exception("WlanCloseHandle failed"); // TODO
+                    throw new Exception(DEBUG_LOG(LOG_ERROR, "WlanCloseHandle failed"));
                 }
-                System.Diagnostics.Debug.WriteLine("[INFO] WlanCloseHandle success");
+                DEBUG_LOG(LOG_INFO, "WlanCloseHandle success");
             }
             catch (Exception)
             {
@@ -101,13 +103,13 @@ namespace Wifi
             }
             finally
             {
-                System.Diagnostics.Debug.WriteLine("<<WifiController>> Dispose end");
+                DEBUG_LOG(LOG_DEBUG, "Dispose end");
             }
         }
 
         public void Connect(string ssid, string key)
         {
-            System.Diagnostics.Debug.WriteLine("<<WifiController>> Connect start");
+            DEBUG_LOG(LOG_DEBUG, "Connect start");
 
             //if (this.Handle == IntPtr.Zero) return;
             //if (this.CurrentWifiInterfaceInfo == null) return;
@@ -122,6 +124,8 @@ namespace Wifi
                 {
                     throw new ArgumentNullException("key");
                 }
+
+                this.CurrentSSID = ssid;
 
                 StringBuilder _profileXml = new StringBuilder();
                 XmlWriterSettings _profileXmlWriterSettings = new XmlWriterSettings();
@@ -181,10 +185,10 @@ namespace Wifi
                 if (NativeWifiAPI.WlanConnect(
                     this.Handle, ref this.CurrentWifiInterfaceInfo.InterfaceGuid, ref _param, new IntPtr()) != 0)
                 {
-                    System.Diagnostics.Debug.WriteLine("[ERROR] WlanConnect failed");
-                    throw new Exception("WlanConnect failed"); // TODO
+                    this.CurrentSSID = null;
+                    throw new Exception(DEBUG_LOG(LOG_ERROR, "WlanConnect failed"));
                 }
-                System.Diagnostics.Debug.WriteLine("[INFO] WlanConnect success");
+                DEBUG_LOG(LOG_INFO, "WlanConnect success");
             }
             catch (Exception)
             {
@@ -192,13 +196,13 @@ namespace Wifi
             }
             finally
             {
-                System.Diagnostics.Debug.WriteLine("<<WifiController>> Connect end");
+                DEBUG_LOG(LOG_DEBUG, "Connect end");
             }
         }
 
         public void Disconnect()
         {
-            System.Diagnostics.Debug.WriteLine("<<WifiController>> Disconnect start");
+            DEBUG_LOG(LOG_DEBUG, "Disconnect start");
 
             //if (this.Handle == IntPtr.Zero) return;
             //if (this.CurrentWifiInterfaceInfo == null) return;
@@ -208,10 +212,9 @@ namespace Wifi
                 if (NativeWifiAPI.WlanDisconnect(
                     this.Handle, ref this.CurrentWifiInterfaceInfo.InterfaceGuid, IntPtr.Zero) != 0)
                 {
-                    System.Diagnostics.Debug.WriteLine("[ERROR] WlanDisconnect failed");
-                    throw new Exception("WlanDisconnect failed"); // TODO
+                    throw new Exception(DEBUG_LOG(LOG_ERROR, "WlanDisconnect failed"));
                 }
-                System.Diagnostics.Debug.WriteLine("[INFO] WlanDisconnect success");
+                DEBUG_LOG(LOG_INFO, "WlanDisconnect success");
             }
             catch (Exception)
             {
@@ -219,13 +222,13 @@ namespace Wifi
             }
             finally
             {
-                System.Diagnostics.Debug.WriteLine("<<WifiController>> Disconnect end");
+                DEBUG_LOG(LOG_DEBUG, "Disconnect end");
             }
         }
 
         private void WlanNotificationCallback(ref NativeWifiAPI.WLAN_NOTIFICATION_DATA notificationData, IntPtr context)
         {
-            System.Diagnostics.Debug.WriteLine(String.Format("<<WifiController>> WlanNotificationCallback start : {0}",
+            DEBUG_LOG(LOG_DEBUG, String.Format("WlanNotificationCallback start : {0}",
                 Enum.GetName(typeof(NativeWifiAPI.WLAN_NOTIFICATION_CODE_ACM), notificationData.notificationCode)));
 
             switch ((NativeWifiAPI.WLAN_NOTIFICATION_CODE_ACM)notificationData.NotificationCode)
@@ -236,12 +239,17 @@ namespace Wifi
                             (NativeWifiAPI.WLAN_CONNECTION_NOTIFICATION_DATA)Marshal.PtrToStructure(
                                 notificationData.dataPtr, typeof(NativeWifiAPI.WLAN_CONNECTION_NOTIFICATION_DATA));
 
-                        WifiConnectionEventArgs _args = new WifiConnectionEventArgs()
-                        {
-                            ssid = _data.dot11Ssid.ucSSID
-                        };
+                        DEBUG_LOG(LOG_DEBUG, String.Format("SSID : {0}", _data.dot11Ssid.ucSSID));
 
-                        this.OnConnectedHandler?.Invoke(notificationData.interfaceGuid, _args);
+                        if (_data.dot11Ssid.ucSSID.Equals(this.CurrentSSID))
+                        {
+                            WifiConnectionEventArgs _args = new WifiConnectionEventArgs()
+                            {
+                                ssid = _data.dot11Ssid.ucSSID
+                            };
+
+                            this.OnConnectedHandler?.Invoke(notificationData.interfaceGuid, _args);
+                        }
                     }
                     break;
 
@@ -251,13 +259,19 @@ namespace Wifi
                             (NativeWifiAPI.WLAN_CONNECTION_NOTIFICATION_DATA)Marshal.PtrToStructure(
                                 notificationData.dataPtr, typeof(NativeWifiAPI.WLAN_CONNECTION_NOTIFICATION_DATA));
 
-                        WifiConnectionEventArgs _args = new WifiConnectionEventArgs()
+                        DEBUG_LOG(LOG_DEBUG, String.Format("SSID : {0}", _data.dot11Ssid.ucSSID));
+
+                        if (_data.dot11Ssid.ucSSID.Equals(this.CurrentSSID))
                         {
-                            ssid = _data.dot11Ssid.ucSSID
-                        };
+                            WifiConnectionEventArgs _args = new WifiConnectionEventArgs()
+                            {
+                                ssid = _data.dot11Ssid.ucSSID
+                            };
 
-                        this.OnDisconnectedHandler?.Invoke(notificationData.interfaceGuid, null);
+                            this.OnDisconnectedHandler?.Invoke(notificationData.interfaceGuid, null);
 
+                            this.CurrentSSID = null;
+                        }
                     }
                     break;
 
@@ -265,7 +279,7 @@ namespace Wifi
                     break;
             }
 
-            System.Diagnostics.Debug.WriteLine("<<WifiController>> WlanNotificationCallback end");
+            DEBUG_LOG(LOG_DEBUG, "WlanNotificationCallback end");
         }
 
         private EventHandler OnConnectedHandler;
@@ -317,6 +331,19 @@ namespace Wifi
             public Guid InterfaceGuid;
             public string InterfaceDescription;
             public WIFI_INTERFACE_STATE State;
+        }
+
+
+        private const string LOG_INFO  = "[INFO ] ";
+        private const string LOG_ERROR = "[ERROR] ";
+        private const string LOG_DEBUG = "[DEBUG] ";
+
+        private string DEBUG_LOG(string type, string message)
+        {
+#if DEBUG
+            System.Diagnostics.Debug.WriteLine("WifiController : " + type + message);
+#endif
+            return message;
         }
     }
 }
