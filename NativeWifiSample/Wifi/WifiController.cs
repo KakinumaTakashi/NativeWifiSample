@@ -4,6 +4,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Xml;
+using System.Xml.Serialization;
 
 namespace Wifi
 {
@@ -17,6 +18,9 @@ namespace Wifi
         private List<WifiInterfaceInfo> CurrentWifiInterfaceInfoList = new List<WifiInterfaceInfo>();
 
         private string CurrentSSID = null;
+
+        private bool RecoveryMode = false;
+        private string BeforeProfileName = null;
 
 
         public WifiController()
@@ -58,6 +62,7 @@ namespace Wifi
                     // 接続中のWiFiアダプタがある場合は現在のアダプタに設定
                     if (_info.isState == NativeWifiAPI.WLAN_INTERFACE_STATE.wlan_interface_state_connected)
                     {
+                        DEBUG_LOG(LOG_DEBUG, String.Format("Set current interface = {0}", _wifiInfo.InterfaceDescription));
                         this.CurrentWifiInterfaceInfo = _wifiInfo;
                     }
                 }
@@ -107,7 +112,7 @@ namespace Wifi
             }
         }
 
-        public void Connect(string ssid, string key)
+        public void Connect(string ssid, string key, bool RecoveryMode)
         {
             DEBUG_LOG(LOG_DEBUG, "Connect start");
 
@@ -125,48 +130,63 @@ namespace Wifi
                     throw new ArgumentNullException("key");
                 }
 
+                if (RecoveryMode)
+                {
+                    // 有効なアクセスポイント一覧を取得
+                    IntPtr _ppAvailableNetworkList = new IntPtr();
+                    if (NativeWifiAPI.WlanGetAvailableNetworkList(
+                        this.Handle, ref this.CurrentWifiInterfaceInfo.InterfaceGuid, 0, IntPtr.Zero,
+                        ref _ppAvailableNetworkList) != 0)
+                    {
+                        throw new Exception(DEBUG_LOG(LOG_ERROR, "WlanGetAvailableNetworkList failed"));
+                    }
+                    DEBUG_LOG(LOG_INFO, "WlanGetAvailableNetworkList success");
+                    NativeWifiAPI.WLAN_AVAILABLE_NETWORK_LIST _availableNetworkList =
+                        new NativeWifiAPI.WLAN_AVAILABLE_NETWORK_LIST(_ppAvailableNetworkList);
+                    // 接続中のアクセスポイントを検索
+                    string _beforeProfileName = null;
+                    foreach (NativeWifiAPI.WLAN_AVAILABLE_NETWORK _availableNetwork in _availableNetworkList.wlanAvailableNetwork)
+                    {
+                        if ((_availableNetwork.dwFlags & NativeWifiAPI.WLAN_AVAILABLE_NETWORK_CONNECTED) != 0)
+                        {
+                            DEBUG_LOG(LOG_DEBUG, String.Format("SSID before connection = {0}", _availableNetwork.dot11Ssid.ucSSID));
+                            _beforeProfileName = _availableNetwork.strProfileName;
+
+                            uint _flags, _access;
+                            string _profileXML;
+                            NativeWifiAPI.WlanGetProfile(this.Handle, ref this.CurrentWifiInterfaceInfo.InterfaceGuid,
+                                _beforeProfileName, IntPtr.Zero, out _profileXML, out _flags, out _access);
+                        }
+                    }
+                    // 接続中のアクセスポイントがある場合はプロファイル名を退避
+                    if (_beforeProfileName != null)
+                    {
+                        this.BeforeProfileName = _beforeProfileName;
+                    }
+                }
+
                 this.CurrentSSID = ssid;
+                this.RecoveryMode = RecoveryMode;
+
+                WifiProfile.WLANProfile _profile = WifiProfile.CreateProfile();
+                _profile.name = ssid;
+                _profile.SSIDConfig.SSID.name = ssid;
+                _profile.connectionType = "ESS";
+                _profile.connectionMode = "auto";
+                _profile.autoSwitch = "false";
+                _profile.MSM.security.authEncryption.authentication = "WPA2PSK";
+                _profile.MSM.security.authEncryption.encryption = "AES";
+                _profile.MSM.security.authEncryption.useOneX = "false";
+                _profile.MSM.security.sharedKey.keyType = "passPhrase";
+                _profile.MSM.security.sharedKey._protected = "false";
+                _profile.MSM.security.sharedKey.keyMaterial = key;
 
                 StringBuilder _profileXml = new StringBuilder();
-                XmlWriterSettings _profileXmlWriterSettings = new XmlWriterSettings();
-                //_profileXmlWriterSettings.Encoding = Encoding.ASCII;
-
-                XmlWriter _profileXmlWriter = XmlWriter.Create(_profileXml, _profileXmlWriterSettings);
-                _profileXmlWriter.WriteStartElement("WLANProfile", @"http://www.microsoft.com/networking/WLAN/profile/v1");
-                _profileXmlWriter.WriteElementString("name", ssid);
-
-                _profileXmlWriter.WriteStartElement("SSIDConfig");
-                _profileXmlWriter.WriteStartElement("SSID");
-                _profileXmlWriter.WriteElementString("name", ssid);
-                _profileXmlWriter.WriteEndElement(); // SSID
-                _profileXmlWriter.WriteEndElement(); // SSIDConfig
-
-                _profileXmlWriter.WriteElementString("connectionType", @"ESS");
-                _profileXmlWriter.WriteElementString("connectionMode", @"auto");
-                _profileXmlWriter.WriteElementString("autoSwitch", @"false");
-
-                _profileXmlWriter.WriteStartElement("MSM");
-                _profileXmlWriter.WriteStartElement("security");
-                _profileXmlWriter.WriteStartElement("authEncryption");
-                _profileXmlWriter.WriteElementString("authentication", @"WPA2PSK");
-                _profileXmlWriter.WriteElementString("encryption", @"AES");
-                _profileXmlWriter.WriteElementString("useOneX", @"false");
-                _profileXmlWriter.WriteEndElement(); // authEncryption
-
-                _profileXmlWriter.WriteStartElement("sharedKey");
-                _profileXmlWriter.WriteElementString("keyType", @"passPhrase");
-                _profileXmlWriter.WriteElementString("protected", @"false");
-                _profileXmlWriter.WriteElementString("keyMaterial", key);
-                _profileXmlWriter.WriteEndElement(); // sharedKey
-
-                _profileXmlWriter.WriteEndElement(); // security
-                _profileXmlWriter.WriteEndElement(); // MSM
-
-                _profileXmlWriter.WriteEndElement(); // WLANProfile
-
-                _profileXmlWriter.Close();
-
-                System.Diagnostics.Debug.WriteLine(_profileXml.ToString());
+                XmlWriter _profileXmlWriter = XmlWriter.Create(_profileXml);
+                XmlSerializer _serializer = new XmlSerializer(
+                    typeof(WifiProfile.WLANProfile), @"http://www.microsoft.com/networking/WLAN/profile/v1");
+                _serializer.Serialize(_profileXmlWriter, _profile);
+                DEBUG_LOG(LOG_DEBUG, _profileXml.ToString());
 
                 NativeWifiAPI.WLAN_CONNECTION_PARAMETERS _param = new NativeWifiAPI.WLAN_CONNECTION_PARAMETERS();
 
@@ -215,6 +235,11 @@ namespace Wifi
                     throw new Exception(DEBUG_LOG(LOG_ERROR, "WlanDisconnect failed"));
                 }
                 DEBUG_LOG(LOG_INFO, "WlanDisconnect success");
+
+                if (this.RecoveryMode)
+                {
+                    // TODO
+                }
             }
             catch (Exception)
             {

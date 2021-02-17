@@ -39,7 +39,7 @@ namespace NativeWifiSample
 
             try
             {
-                this.WifiController.Connect(this.TextBoxSSID.Text, this.TextBoxKEY.Text);
+                this.WifiController.Connect(this.TextBoxSSID.Text, this.TextBoxKEY.Text, true);
             }
             catch (Exception)
             {
