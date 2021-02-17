@@ -335,17 +335,18 @@ namespace Wifi
             IntPtr pReserved,
             ref IntPtr ppAvailableNetworkList);
 
-        [DllImport("Wlanapi.dll", SetLastError = true)]
+        [DllImport("Wlanapi.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         public static extern uint WlanGetProfile(
             IntPtr hClientHandle,
             ref Guid pInterfaceGuid,
             string profileName,
             IntPtr pReserved,
-            out string profileXml,
+            //out string profileXml,
+            ref IntPtr profileXml,
             //[In, Out, Optional] ref WlanProfileFlags flags
-            out uint pdwFlags,
+            ref uint pdwFlags,
             //[Out, Optional] out WlanProfileAccessFlags pdwGrantedAccess
-            out uint pdwGrantedAccess
+            ref uint pdwGrantedAccess
         );
 
         [DllImport("Wlanapi.dll", SetLastError = true)]

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -21,6 +22,7 @@ namespace Wifi
 
         private bool RecoveryMode = false;
         private string BeforeProfileName = null;
+        private string BeforeProfile = null;
 
 
         public WifiController()
@@ -145,6 +147,7 @@ namespace Wifi
                         new NativeWifiAPI.WLAN_AVAILABLE_NETWORK_LIST(_ppAvailableNetworkList);
                     // 接続中のアクセスポイントを検索
                     string _beforeProfileName = null;
+                    string _beforeProfile = null;
                     foreach (NativeWifiAPI.WLAN_AVAILABLE_NETWORK _availableNetwork in _availableNetworkList.wlanAvailableNetwork)
                     {
                         if ((_availableNetwork.dwFlags & NativeWifiAPI.WLAN_AVAILABLE_NETWORK_CONNECTED) != 0)
@@ -152,16 +155,30 @@ namespace Wifi
                             DEBUG_LOG(LOG_DEBUG, String.Format("SSID before connection = {0}", _availableNetwork.dot11Ssid.ucSSID));
                             _beforeProfileName = _availableNetwork.strProfileName;
 
-                            uint _flags, _access;
-                            string _profileXML;
-                            NativeWifiAPI.WlanGetProfile(this.Handle, ref this.CurrentWifiInterfaceInfo.InterfaceGuid,
-                                _beforeProfileName, IntPtr.Zero, out _profileXML, out _flags, out _access);
+                            uint _flags = 0, _access = 0;
+                            IntPtr _buf = new IntPtr();
+                            uint _ret = NativeWifiAPI.WlanGetProfile(this.Handle, ref this.CurrentWifiInterfaceInfo.InterfaceGuid,
+                                _beforeProfileName, IntPtr.Zero, ref _buf, ref _flags, ref _access);
+                            if (_ret == 1168 /*ERROR_NOT_FOUND*/)
+                            {
+                                this.BeforeProfile = null;
+                            }
+                            else if (_ret != 0 /*NO_ERROR*/)
+                            {
+                                throw new Exception(DEBUG_LOG(LOG_ERROR, "WlanGetProfile failed"));
+                            }
+                            else
+                            {
+                                _beforeProfile = Marshal.PtrToStringAuto(_buf);
+                            }
+                            NativeWifiAPI.WlanFreeMemory(_buf);
                         }
                     }
-                    // 接続中のアクセスポイントがある場合はプロファイル名を退避
-                    if (_beforeProfileName != null)
+                    // 接続中のアクセスポイントがある場合はプロファイルを退避
+                    if (!String.IsNullOrEmpty(_beforeProfileName))
                     {
                         this.BeforeProfileName = _beforeProfileName;
+                        this.BeforeProfile = _beforeProfile;
                     }
                 }
 
@@ -188,25 +205,37 @@ namespace Wifi
                 _serializer.Serialize(_profileXmlWriter, _profile);
                 DEBUG_LOG(LOG_DEBUG, _profileXml.ToString());
 
+                // 一時プロファイルで接続する
                 NativeWifiAPI.WLAN_CONNECTION_PARAMETERS _param = new NativeWifiAPI.WLAN_CONNECTION_PARAMETERS();
-
-                // OSでプロファイル作成済みであればこの設定で成功する
-                //_param.wlanConnectionMode = WirelessAPI.WLAN_CONNECTION_MODE.wlan_connection_mode_profile;
-                //_param.strProfile = "Buffalo-G-F16E"; // SSID
-                //_param.dot11BssType = WirelessAPI.DOT11_BSS_TYPE./*dot11_BSS_type_infrastructure*/;
-                //_param.dwFlags = 0;
-
-                // 一時プロファイルで接続する場合
                 _param.wlanConnectionMode = NativeWifiAPI.WLAN_CONNECTION_MODE.wlan_connection_mode_temporary_profile;
                 _param.strProfile = _profileXml.ToString();
                 _param.dot11BssType = NativeWifiAPI.DOT11_BSS_TYPE.dot11_BSS_type_infrastructure;
                 _param.dwFlags = 0;
 
-                if (NativeWifiAPI.WlanConnect(
-                    this.Handle, ref this.CurrentWifiInterfaceInfo.InterfaceGuid, ref _param, new IntPtr()) != 0)
+                ExecConnect(_param);
+            }
+            catch (Exception)
+            {
+                throw;
+            }
+            finally
+            {
+                DEBUG_LOG(LOG_DEBUG, "Connect end");
+            }
+        }
+
+        private void ExecConnect(NativeWifiAPI.WLAN_CONNECTION_PARAMETERS _param)
+        {
+            DEBUG_LOG(LOG_DEBUG, "ExecConnect start");
+
+            try
+            {
+                uint _ret;
+                if ((_ret = NativeWifiAPI.WlanConnect(
+                    this.Handle, ref this.CurrentWifiInterfaceInfo.InterfaceGuid, ref _param, new IntPtr())) != 0)
                 {
                     this.CurrentSSID = null;
-                    throw new Exception(DEBUG_LOG(LOG_ERROR, "WlanConnect failed"));
+                    throw new Exception(DEBUG_LOG(LOG_ERROR, String.Format("WlanConnect failed (return code = {0})", _ret)));
                 }
                 DEBUG_LOG(LOG_INFO, "WlanConnect success");
             }
@@ -216,7 +245,7 @@ namespace Wifi
             }
             finally
             {
-                DEBUG_LOG(LOG_DEBUG, "Connect end");
+                DEBUG_LOG(LOG_DEBUG, "ExecConnect end");
             }
         }
 
@@ -238,7 +267,23 @@ namespace Wifi
 
                 if (this.RecoveryMode)
                 {
-                    // TODO
+                    XmlSerializer _serializer = new XmlSerializer(
+                        typeof(WifiProfile.WLANProfile), @"http://www.microsoft.com/networking/WLAN/profile/v1");
+                    WifiProfile.WLANProfile _profile =
+                        (WifiProfile.WLANProfile)_serializer.Deserialize(new StringReader(this.BeforeProfile));
+
+                    if (!_profile.connectionMode.Equals("auto"))
+                    {
+                        NativeWifiAPI.WLAN_CONNECTION_PARAMETERS _param = new NativeWifiAPI.WLAN_CONNECTION_PARAMETERS();
+
+                        // OSでプロファイル作成済みであればこの設定で成功する
+                        _param.wlanConnectionMode = NativeWifiAPI.WLAN_CONNECTION_MODE.wlan_connection_mode_profile;
+                        _param.strProfile = this.BeforeProfileName;
+                        _param.dot11BssType = NativeWifiAPI.DOT11_BSS_TYPE.dot11_BSS_type_infrastructure;
+                        _param.dwFlags = 0;
+
+                        ExecConnect(_param);
+                    }
                 }
             }
             catch (Exception)
