@@ -72,6 +72,11 @@ namespace NativeWifiSample
                 this.TextBoxKEY.Enabled = true;
                 this.ButtonConnect.Enabled = true;
                 this.ButtonDisconnect.Enabled = true;
+
+                if (!_args.isSuccess)
+                {
+                    MessageBox.Show("接続に失敗");
+                }
             }));
         }
 

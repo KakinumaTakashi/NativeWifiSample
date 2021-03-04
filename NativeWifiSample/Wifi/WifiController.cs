@@ -51,23 +51,31 @@ namespace Wifi
                 DEBUG_LOG(LOG_INFO, "WlanEnumInterfaces success");
 
                 // WiFiアダプタリストを設定
-                foreach (NativeWifiAPI.WLAN_INTERFACE_INFO _info in infoList.InterfaceInfo)
+                WifiInterfaceInfo _wifiInfo = new WifiInterfaceInfo()
                 {
-                    WifiInterfaceInfo _wifiInfo = new WifiInterfaceInfo()
-                    {
-                        InterfaceGuid = _info.InterfaceGuid,
-                        InterfaceDescription = _info.strInterfaceDescription,
-                        State = (WIFI_INTERFACE_STATE)_info.isState
-                    };
-                    this.CurrentWifiInterfaceInfoList.Add(_wifiInfo);
+                    InterfaceGuid = infoList.InterfaceInfo[0].InterfaceGuid,
+                    InterfaceDescription = infoList.InterfaceInfo[0].strInterfaceDescription,
+                    State = (WIFI_INTERFACE_STATE)infoList.InterfaceInfo[0].isState
+                };
+                DEBUG_LOG(LOG_DEBUG, String.Format("Set current interface = {0}", _wifiInfo.InterfaceDescription));
+                this.CurrentWifiInterfaceInfo = _wifiInfo;
+                //foreach (NativeWifiAPI.WLAN_INTERFACE_INFO _info in infoList.InterfaceInfo)
+                //{
+                //    WifiInterfaceInfo _wifiInfo = new WifiInterfaceInfo()
+                //    {
+                //        InterfaceGuid = _info.InterfaceGuid,
+                //        InterfaceDescription = _info.strInterfaceDescription,
+                //        State = (WIFI_INTERFACE_STATE)_info.isState
+                //    };
+                //    this.CurrentWifiInterfaceInfoList.Add(_wifiInfo);
 
-                    // 接続中のWiFiアダプタがある場合は現在のアダプタに設定
-                    if (_info.isState == NativeWifiAPI.WLAN_INTERFACE_STATE.wlan_interface_state_connected)
-                    {
-                        DEBUG_LOG(LOG_DEBUG, String.Format("Set current interface = {0}", _wifiInfo.InterfaceDescription));
-                        this.CurrentWifiInterfaceInfo = _wifiInfo;
-                    }
-                }
+                //    // 接続中のWiFiアダプタがある場合は現在のアダプタに設定
+                //    if (_info.isState == NativeWifiAPI.WLAN_INTERFACE_STATE.wlan_interface_state_connected)
+                //    {
+                //        DEBUG_LOG(LOG_DEBUG, String.Format("Set current interface = {0}", _wifiInfo.InterfaceDescription));
+                //        this.CurrentWifiInterfaceInfo = _wifiInfo;
+                //    }
+                //}
 
                 // イベント通知ハンドラの登録
                 NativeWifiAPI.WLAN_NOTIFICATION_SOURCE pdwPrevNotifSource;
@@ -189,7 +197,7 @@ namespace Wifi
                 _profile.name = ssid;
                 _profile.SSIDConfig.SSID.name = ssid;
                 _profile.connectionType = "ESS";
-                _profile.connectionMode = "auto";
+                _profile.connectionMode = "manual";
                 _profile.autoSwitch = "false";
                 _profile.MSM.security.authEncryption.authentication = "WPA2PSK";
                 _profile.MSM.security.authEncryption.encryption = "AES";
@@ -265,7 +273,7 @@ namespace Wifi
                 }
                 DEBUG_LOG(LOG_INFO, "WlanDisconnect success");
 
-                if (this.RecoveryMode)
+                if (this.RecoveryMode && this.BeforeProfile != null)
                 {
                     XmlSerializer _serializer = new XmlSerializer(
                         typeof(WifiProfile.WLANProfile), @"http://www.microsoft.com/networking/WLAN/profile/v1");
@@ -315,7 +323,29 @@ namespace Wifi
                         {
                             WifiConnectionEventArgs _args = new WifiConnectionEventArgs()
                             {
-                                ssid = _data.dot11Ssid.ucSSID
+                                ssid = _data.dot11Ssid.ucSSID,
+                                isSuccess = true
+                            };
+
+                            this.OnConnectedHandler?.Invoke(notificationData.interfaceGuid, _args);
+                        }
+                    }
+                    break;
+
+                case NativeWifiAPI.WLAN_NOTIFICATION_CODE_ACM.wlan_notification_acm_connection_attempt_fail:
+                    {
+                        NativeWifiAPI.WLAN_CONNECTION_NOTIFICATION_DATA _data =
+                            (NativeWifiAPI.WLAN_CONNECTION_NOTIFICATION_DATA)Marshal.PtrToStructure(
+                                notificationData.dataPtr, typeof(NativeWifiAPI.WLAN_CONNECTION_NOTIFICATION_DATA));
+
+                        DEBUG_LOG(LOG_DEBUG, String.Format("SSID : {0}", _data.dot11Ssid.ucSSID));
+
+                        if (_data.dot11Ssid.ucSSID.Equals(this.CurrentSSID))
+                        {
+                            WifiConnectionEventArgs _args = new WifiConnectionEventArgs()
+                            {
+                                ssid = _data.dot11Ssid.ucSSID,
+                                isSuccess = false
                             };
 
                             this.OnConnectedHandler?.Invoke(notificationData.interfaceGuid, _args);
@@ -335,7 +365,8 @@ namespace Wifi
                         {
                             WifiConnectionEventArgs _args = new WifiConnectionEventArgs()
                             {
-                                ssid = _data.dot11Ssid.ucSSID
+                                ssid = _data.dot11Ssid.ucSSID,
+                                isSuccess = true
                             };
 
                             this.OnDisconnectedHandler?.Invoke(notificationData.interfaceGuid, null);
@@ -368,6 +399,7 @@ namespace Wifi
         public class WifiConnectionEventArgs : EventArgs
         {
             public string ssid;
+            public bool isSuccess;
         }
 
         private EventHandler OnDisconnectedHandler;
