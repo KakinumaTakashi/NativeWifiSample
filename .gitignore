@@ -348,3 +348,5 @@ MigrationBackup/
 
 # Ionide (cross platform F# VS Code tools) working folder
 .ionide/
+/NativeWifiSample/Resource1.resx
+/NativeWifiSample/Resource1.Designer.cs

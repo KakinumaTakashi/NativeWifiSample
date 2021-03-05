@@ -1,7 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Xml;
@@ -15,8 +13,8 @@ namespace Wifi
     {
         private IntPtr Handle = IntPtr.Zero;
 
-        private WifiInterfaceInfo CurrentWifiInterfaceInfo = null;
-        private List<WifiInterfaceInfo> CurrentWifiInterfaceInfoList = new List<WifiInterfaceInfo>();
+        private readonly WifiInterfaceInfo CurrentWifiInterfaceInfo = null;
+        //private List<WifiInterfaceInfo> CurrentWifiInterfaceInfoList = new List<WifiInterfaceInfo>();
 
         private string CurrentSSID = null;
 
@@ -24,6 +22,7 @@ namespace Wifi
         private string BeforeProfileName = null;
         private string BeforeProfile = null;
 
+        private bool IsConnectionAttemptFail = false;
 
         public WifiController()
         {
@@ -32,8 +31,7 @@ namespace Wifi
             try
             {
                 // ハンドルオープン
-                uint _version;
-                if (NativeWifiAPI.WlanOpenHandle(2, IntPtr.Zero, out _version, out this.Handle) != 0)
+                if (NativeWifiAPI.WlanOpenHandle(2, IntPtr.Zero, out uint _version, out this.Handle) != 0)
                 {
                     throw new Exception(DEBUG_LOG(LOG_ERROR, "WlanOpenHandle failed"));
                 }
@@ -78,11 +76,10 @@ namespace Wifi
                 //}
 
                 // イベント通知ハンドラの登録
-                NativeWifiAPI.WLAN_NOTIFICATION_SOURCE pdwPrevNotifSource;
                 NativeWifiAPI.WLAN_NOTIFICATION_CALLBACK _delegate = new NativeWifiAPI.WLAN_NOTIFICATION_CALLBACK(WlanNotificationCallback);
 
                 if (NativeWifiAPI.WlanRegisterNotification(this.Handle, NativeWifiAPI.WLAN_NOTIFICATION_SOURCE.ACM, false,
-                    _delegate, IntPtr.Zero, IntPtr.Zero, out pdwPrevNotifSource) != 0)
+                    _delegate, IntPtr.Zero, IntPtr.Zero, out NativeWifiAPI.WLAN_NOTIFICATION_SOURCE pdwPrevNotifSource) != 0)
                 {
                     throw new Exception(DEBUG_LOG(LOG_ERROR, "WlanRegisterNotification failed"));
                 }
@@ -192,6 +189,7 @@ namespace Wifi
 
                 this.CurrentSSID = ssid;
                 this.RecoveryMode = RecoveryMode;
+                this.IsConnectionAttemptFail = false;
 
                 WifiProfile.WLANProfile _profile = WifiProfile.CreateProfile();
                 _profile.name = ssid;
@@ -214,11 +212,13 @@ namespace Wifi
                 DEBUG_LOG(LOG_DEBUG, _profileXml.ToString());
 
                 // 一時プロファイルで接続する
-                NativeWifiAPI.WLAN_CONNECTION_PARAMETERS _param = new NativeWifiAPI.WLAN_CONNECTION_PARAMETERS();
-                _param.wlanConnectionMode = NativeWifiAPI.WLAN_CONNECTION_MODE.wlan_connection_mode_temporary_profile;
-                _param.strProfile = _profileXml.ToString();
-                _param.dot11BssType = NativeWifiAPI.DOT11_BSS_TYPE.dot11_BSS_type_infrastructure;
-                _param.dwFlags = 0;
+                NativeWifiAPI.WLAN_CONNECTION_PARAMETERS _param = new NativeWifiAPI.WLAN_CONNECTION_PARAMETERS
+                {
+                    wlanConnectionMode = NativeWifiAPI.WLAN_CONNECTION_MODE.wlan_connection_mode_temporary_profile,
+                    strProfile = _profileXml.ToString(),
+                    dot11BssType = NativeWifiAPI.DOT11_BSS_TYPE.dot11_BSS_type_infrastructure,
+                    dwFlags = 0
+                };
 
                 ExecConnect(_param);
             }
@@ -242,7 +242,7 @@ namespace Wifi
                 if ((_ret = NativeWifiAPI.WlanConnect(
                     this.Handle, ref this.CurrentWifiInterfaceInfo.InterfaceGuid, ref _param, new IntPtr())) != 0)
                 {
-                    this.CurrentSSID = null;
+                    //this.CurrentSSID = null;
                     throw new Exception(DEBUG_LOG(LOG_ERROR, String.Format("WlanConnect failed (return code = {0})", _ret)));
                 }
                 DEBUG_LOG(LOG_INFO, "WlanConnect success");
@@ -282,13 +282,13 @@ namespace Wifi
 
                     if (!_profile.connectionMode.Equals("auto"))
                     {
-                        NativeWifiAPI.WLAN_CONNECTION_PARAMETERS _param = new NativeWifiAPI.WLAN_CONNECTION_PARAMETERS();
-
-                        // OSでプロファイル作成済みであればこの設定で成功する
-                        _param.wlanConnectionMode = NativeWifiAPI.WLAN_CONNECTION_MODE.wlan_connection_mode_profile;
-                        _param.strProfile = this.BeforeProfileName;
-                        _param.dot11BssType = NativeWifiAPI.DOT11_BSS_TYPE.dot11_BSS_type_infrastructure;
-                        _param.dwFlags = 0;
+                        NativeWifiAPI.WLAN_CONNECTION_PARAMETERS _param = new NativeWifiAPI.WLAN_CONNECTION_PARAMETERS
+                        {
+                            wlanConnectionMode = NativeWifiAPI.WLAN_CONNECTION_MODE.wlan_connection_mode_profile,
+                            strProfile = this.BeforeProfileName,
+                            dot11BssType = NativeWifiAPI.DOT11_BSS_TYPE.dot11_BSS_type_infrastructure,
+                            dwFlags = 0
+                        };
 
                         ExecConnect(_param);
                     }
@@ -317,7 +317,7 @@ namespace Wifi
                             (NativeWifiAPI.WLAN_CONNECTION_NOTIFICATION_DATA)Marshal.PtrToStructure(
                                 notificationData.dataPtr, typeof(NativeWifiAPI.WLAN_CONNECTION_NOTIFICATION_DATA));
 
-                        DEBUG_LOG(LOG_DEBUG, String.Format("SSID : {0}", _data.dot11Ssid.ucSSID));
+                        DEBUG_LOG(LOG_DEBUG, String.Format("CurrentSSID : {0}, SSID : {1}", this.CurrentSSID, _data.dot11Ssid.ucSSID));
 
                         if (_data.dot11Ssid.ucSSID.Equals(this.CurrentSSID))
                         {
@@ -326,6 +326,11 @@ namespace Wifi
                                 ssid = _data.dot11Ssid.ucSSID,
                                 isSuccess = true
                             };
+
+                            if (this.IsConnectionAttemptFail)
+                            {
+                                _args.isSuccess = false;
+                            }
 
                             this.OnConnectedHandler?.Invoke(notificationData.interfaceGuid, _args);
                         }
@@ -338,17 +343,18 @@ namespace Wifi
                             (NativeWifiAPI.WLAN_CONNECTION_NOTIFICATION_DATA)Marshal.PtrToStructure(
                                 notificationData.dataPtr, typeof(NativeWifiAPI.WLAN_CONNECTION_NOTIFICATION_DATA));
 
-                        DEBUG_LOG(LOG_DEBUG, String.Format("SSID : {0}", _data.dot11Ssid.ucSSID));
+                        DEBUG_LOG(LOG_DEBUG, String.Format("CurrentSSID : {0}, SSID : {1}", this.CurrentSSID, _data.dot11Ssid.ucSSID));
 
                         if (_data.dot11Ssid.ucSSID.Equals(this.CurrentSSID))
                         {
-                            WifiConnectionEventArgs _args = new WifiConnectionEventArgs()
-                            {
-                                ssid = _data.dot11Ssid.ucSSID,
-                                isSuccess = false
-                            };
+                            this.IsConnectionAttemptFail = true;
+                            //WifiConnectionEventArgs _args = new WifiConnectionEventArgs()
+                            //{
+                            //    ssid = _data.dot11Ssid.ucSSID,
+                            //    isSuccess = false
+                            //};
 
-                            this.OnConnectedHandler?.Invoke(notificationData.interfaceGuid, _args);
+                            //this.OnConnectedHandler?.Invoke(notificationData.interfaceGuid, _args);
                         }
                     }
                     break;
@@ -359,7 +365,7 @@ namespace Wifi
                             (NativeWifiAPI.WLAN_CONNECTION_NOTIFICATION_DATA)Marshal.PtrToStructure(
                                 notificationData.dataPtr, typeof(NativeWifiAPI.WLAN_CONNECTION_NOTIFICATION_DATA));
 
-                        DEBUG_LOG(LOG_DEBUG, String.Format("SSID : {0}", _data.dot11Ssid.ucSSID));
+                        DEBUG_LOG(LOG_DEBUG, String.Format("CurrentSSID : {0}, SSID : {1}", this.CurrentSSID, _data.dot11Ssid.ucSSID));
 
                         if (_data.dot11Ssid.ucSSID.Equals(this.CurrentSSID))
                         {
@@ -368,10 +374,9 @@ namespace Wifi
                                 ssid = _data.dot11Ssid.ucSSID,
                                 isSuccess = true
                             };
-
                             this.OnDisconnectedHandler?.Invoke(notificationData.interfaceGuid, null);
 
-                            this.CurrentSSID = null;
+                            //this.CurrentSSID = null;
                         }
                     }
                     break;

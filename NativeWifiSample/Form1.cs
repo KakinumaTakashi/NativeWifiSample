@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Resources;
 using System.Windows.Forms;
 using Wifi;
 
@@ -15,8 +16,8 @@ namespace NativeWifiSample
 
         private void Form1_Load(object sender, EventArgs e)
         {
-            this.TextBoxSSID.Text = @"";
-            this.TextBoxKEY.Text = @"";
+            this.TextBoxSSID.Text = Resource1.DefaultSSID;
+            this.TextBoxKEY.Text = Resource1.DefaultAccessKey;
 
 
             this.WifiController = new WifiController();
@@ -27,7 +28,14 @@ namespace NativeWifiSample
 
         private void Form1_FormClosed(object sender, FormClosedEventArgs e)
         {
-            this.WifiController.Dispose();
+            try
+            {
+                this.WifiController.Dispose();
+            }
+            catch (Exception _e)
+            {
+                System.Diagnostics.Debug.WriteLine(_e.StackTrace);
+            }
         }
 
         private void ButtonConnect_Click(object sender, EventArgs e)
@@ -41,8 +49,11 @@ namespace NativeWifiSample
             {
                 this.WifiController.Connect(this.TextBoxSSID.Text, this.TextBoxKEY.Text, true);
             }
-            catch (Exception)
+            catch (Exception _e)
             {
+                System.Diagnostics.Debug.WriteLine(_e.Message);
+                System.Diagnostics.Debug.WriteLine(_e.StackTrace);
+
                 this.TextBoxSSID.Enabled = true;
                 this.TextBoxKEY.Enabled = true;
                 this.ButtonConnect.Enabled = true;
@@ -64,7 +75,8 @@ namespace NativeWifiSample
         {
             WifiController.WifiConnectionEventArgs _args = (WifiController.WifiConnectionEventArgs)e;
             System.Diagnostics.Debug.WriteLine(
-                String.Format("[INFO] OnConnected called guid : {0} , ssid : {1}", ((Guid)sender).ToString(), _args.ssid));
+                String.Format("[INFO] OnConnected called guid : {0} , ssid : {1}, isSuccess : {2}",
+                ((Guid)sender).ToString(), _args.ssid, _args.isSuccess));
 
             this.Invoke((MethodInvoker)(() =>
             {
