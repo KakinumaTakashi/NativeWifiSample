@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Resources;
 using System.Windows.Forms;
 using Wifi;
 
@@ -34,6 +33,7 @@ namespace NativeWifiSample
             }
             catch (Exception _e)
             {
+                System.Diagnostics.Debug.WriteLine(_e.Message);
                 System.Diagnostics.Debug.WriteLine(_e.StackTrace);
             }
         }
@@ -68,7 +68,15 @@ namespace NativeWifiSample
             this.ButtonConnect.Enabled = false;
             this.ButtonDisconnect.Enabled = false;
 
-            this.WifiController.Disconnect();
+            try
+            {
+                this.WifiController.Disconnect();
+            }
+            catch (Exception _e)
+            {
+                System.Diagnostics.Debug.WriteLine(_e.Message);
+                System.Diagnostics.Debug.WriteLine(_e.StackTrace);
+            }
         }
 
         private void OnConnected(object sender, EventArgs e)
